@@ -1,14 +1,44 @@
 
+
+setClass(
+  "board.state",
+  slots = c(player.hand = "character", ace = "logical",
+      dealer.face = "character", bet = "numeric", 
+      chips = "numeric", deck.size = "numeric", seen.cards = "character"),
+  validity = function(object) {
+    # Optional check: ensure 'player.hand' is all non-empty character strings
+    if (any(!nzchar(object@player.hand))) {
+      return("All cards must be non-empty character strings.")
+    }
+    # Optional check: ensure 'seen.cards' is all non-empty character strings
+    if (any(!nzchar(object@seen.cards))) {
+      return("All cards must be non-empty character strings.")
+    }
+    TRUE
+  }
+)
 dealer.library <- read.csv("dealer_blackjack_probs.csv", row.names=1, 
                            check.names = F)
-col.names = as.numeric(colnames(dealer.library))
+
+p1 <- new("board.state", player.hand = c("5", "A"), ace = TRUE,
+            dealer.face = "Q")
+
 card.names <- c('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K')
-card.vals <- c(1,2,3,4,5,6,7,8,9,10,10,10,10)
+card.vals  <- c( 1 ,  2 ,  3 ,  4 ,  5 ,  6 ,  7 ,  8 ,  9 ,  10 , 10 , 10 , 10)
 card.probs <- rep(1/13, 13)
+ 
+card.sum <- function(cards) {
+  indices <- match(cards, card.names)   # get positions
+  if (any(is.na(indices))) {
+    stop("Invalid card(s) detected")
+  }
+  sum(card.vals[indices])               # sum the corresponding values
+}
 
 ## Stand EV is the same even if player holds an Ace
 stand.EV <- function(player.total, dealer.face) {
   
+  col.names = as.numeric(colnames(dealer.library))
   dealer.results <- dealer.library[dealer.face, ]
   win.prob <- sum(dealer.results[, col.names < player.total])
   loss.prob <- sum(dealer.results[, col.names > player.total])
@@ -56,15 +86,30 @@ hit.EV <- function(player.total, dealer.face) {
   return(all.hit.EV[player.total])
 }
 
-double.down.EV <- function(player.total, dealer.face) {
+double.down.EV <- function(p1) {
   ## Assumes that I hit once then stand.
   ## Useful for computing EV in double down scenarios
   
   house = dealer.library[dealer.face, ]
-  hands = player.total + card.vals
-  probs = c(sum(hands < 17), sum(hands == 17), sum(hands == 18),
-                   sum(hands== 19), sum(hands == 20), sum(hands == 21), 
-                   sum(hands > 21)) / 13
+  
+  if (p1@ace) {
+    ## Logic for player holding an ace
+    hands <- card.sum(p1@player.hand) + card.vals
+    hands[hands <= 11] <- hands[hands <= 11] + 10
+  } else {
+    hands <- card.sum(p1@player.hand) + card.vals
+    if (card.sum(p1@player.hand) < 11) {
+      hands[1] <- hands[1] + 10
+    }
+  }
+  ## Calculate probability of each hand total.
+  probs = c(sum(hands <  17), 
+            sum(hands == 17), 
+            sum(hands == 18),
+            sum(hands == 19), 
+            sum(hands == 20), 
+            sum(hands == 21), 
+            sum(hands >  21)) / 13
   
   win.EV = probs[1]*house['0'] +
            probs[2]*house['0'] +
