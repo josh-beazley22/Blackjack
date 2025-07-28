@@ -1,53 +1,46 @@
 
 
-setClass(
-  "board.state",
-  slots = c(player.hand = "character", ace = "logical",
-      dealer.face = "character", bet = "numeric", 
-      chips = "numeric", deck.size = "numeric", seen.cards = "character"),
-  validity = function(object) {
-    # Optional check: ensure 'player.hand' is all non-empty character strings
-    if (any(!nzchar(object@player.hand))) {
-      return("All cards must be non-empty character strings.")
-    }
-    # Optional check: ensure 'seen.cards' is all non-empty character strings
-    if (any(!nzchar(object@seen.cards))) {
-      return("All cards must be non-empty character strings.")
-    }
-    TRUE
-  }
-)
-dealer.library <- read.csv("dealer_blackjack_probs.csv", row.names=1, 
-                           check.names = F)
-
-p1 <- new("board.state", player.hand = c("5", "A"), ace = TRUE,
-            dealer.face = "Q")
-
-card.names <- c('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K')
-card.vals  <- c( 1 ,  2 ,  3 ,  4 ,  5 ,  6 ,  7 ,  8 ,  9 ,  10 , 10 , 10 , 10)
-card.probs <- rep(1/13, 13)
- 
-card.sum <- function(cards) {
-  indices <- match(cards, card.names)   # get positions
-  if (any(is.na(indices))) {
-    stop("Invalid card(s) detected")
-  }
-  sum(card.vals[indices])               # sum the corresponding values
-}
-
 ## Stand EV is the same even if player holds an Ace
-stand.EV <- function(player.total, dealer.face) {
+stand.EV <- function(penguin) {
   
   col.names = as.numeric(colnames(dealer.library))
-  dealer.results <- dealer.library[dealer.face, ]
-  win.prob <- sum(dealer.results[, col.names < player.total])
-  loss.prob <- sum(dealer.results[, col.names > player.total])
-  return(win.prob - loss.prob)
+  dealer.sim <- dealer.library[penguin@dealer.face, ]
+  
+  ## When dealer shows Ace, the hole card is checked when insurance is payed out.
+  if (penguin@dealer.face == 'A') {
+    dealer.sim['21'] = 0
+    dealer.sim = dealer.sim / sum(dealer.sim)
+  }
+  ## Vector of possible player hands
+  player.sum = floor.sum(penguin@player.hand)
+  if (penguin@ace & player.sum <= 11) {
+    player.sum = player.sum + 10
+  }
+  ## Compute EV
+  win.prob <- sum(dealer.sim[, col.names < player.sum])
+  loss.prob <- sum(dealer.sim[, col.names > player.sum])
+  win.prob - loss.prob
 }
 
-hit.EV <- function(player.total, dealer.face) {
+hit.EV <- function(penguin) {
   
-  dealer.results <- dealer.library[dealer.face, ]
+  dealer.sim <- dealer.library[dealer.face, ]
+  
+  ## Iterate for every card player could draw
+  for (i in 1:13) {
+    kiwi = new("board.state", 
+               player.hand = c(penguin@player.hand, card.names[i]),
+               ace = (penguin@ace && card.names[i] == 'A'),
+               dealer.face = penguin@dealer.face,
+               deck.size = penguin@deck.size, 
+               seen.cards = c(penguin@seen.cards, card.names[i]))
+    ## TODO: look up EV of kiwi.
+    ## summation: prob(card) * EV
+  }
+}
+  
+hit.EV.legacy <- function(penguin) {
+  
   all.stand.EV <- numeric(21)
   for (i in 1:21) {
     all.stand.EV[i] <- stand.EV(i, dealer.face)
@@ -83,22 +76,22 @@ hit.EV <- function(player.total, dealer.face) {
     }
     all.hit.EV[i] <- cumm.EV - bust.prob
   }
-  return(all.hit.EV[player.total])
+  all.hit.EV[player.total]
 }
 
-double.down.EV <- function(p1) {
+double.down.EV <- function(penguin) {
   ## Assumes that I hit once then stand.
   ## Useful for computing EV in double down scenarios
   
   house = dealer.library[dealer.face, ]
   
-  if (p1@ace) {
+  if (penguin@ace) {
     ## Logic for player holding an ace
-    hands <- card.sum(p1@player.hand) + card.vals
+    hands <- floor.sum(penguin@player.hand) + card.vals
     hands[hands <= 11] <- hands[hands <= 11] + 10
   } else {
-    hands <- card.sum(p1@player.hand) + card.vals
-    if (card.sum(p1@player.hand) < 11) {
+    hands <- floor.sum(penguin@player.hand) + card.vals
+    if (floor.sum(penguin@player.hand) < 11) {
       hands[1] <- hands[1] + 10
     }
   }
@@ -126,20 +119,20 @@ double.down.EV <- function(p1) {
            probs[6]*0 +
            probs[7]*1
   
-  return(2*(win.EV - loss.EV))
+  2*(win.EV - loss.EV)
 }
 
-surrender.EV <- function(player.total, dealer.face) {
-  
-  return(-.5)
+surrender.EV <- function(penguin) {
+  ## Player always loses half pot on a surrender
+  -0.5
 }
 
-compute.EV <- function(player.total, dealer.face) {
+compute.EV <- function(penguin) {
   
   EV <- c(hit.EV(player.total, dealer.face),
-          double.down.EV(player.total, dealer.face),
-          stand.EV(player.total, dealer.face),
-          surrender.EV(player.total, dealer.face))
+          double.down.EV(penguin),
+          stand.EV(penguin),
+          surrender.EV(penguin))
   
   names(EV) <- c("hit", "double down", "stand", "surrender")
   
@@ -152,9 +145,6 @@ compute.EV <- function(player.total, dealer.face) {
   )
 }
 
-## TODO: when the dealer is showing an ace, I know it's not a blackjack
-## when I am deciding to split, double down, etc.
-  
 
   
 
