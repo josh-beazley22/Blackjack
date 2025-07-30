@@ -1,43 +1,34 @@
 
 library(R6)
 
-BoardState <- R6Class("BoardState",
+Blackjack <- R6Class("Blackjack",
   public = list(
-    player.hand = NULL,
-    dealer.face = NULL,
+    ## Tracking hands
+    player.hand = NULL, ## index-able container of c()
+    dealer.hand = NULL, ## c()
+    
+    num.players = 1,
+    chips = 200,
     bet = NULL,
-    chips = NULL,
-    num.players = NULL,
-    deck.size = NULL,
-    seen.cards = NULL,
+    
+    deck.size = 8,
+    seen.cards =  setNames(rep(0, 13), c('A','2','3','4','5','6','7','8','9','10','J','Q','K')),
+    legal.moves = NULL,
+    insurance = NULL,
+    no.actions = NULL,
+    
     card.names = c('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'),
     card.vals  = c( 1 ,  2 ,  3 ,  4 ,  5 ,  6 ,  7 ,  8 ,  9 ,  10 , 10 , 10 , 10),
-    moves = c('hit', 'stand', 'split', 'double down', 'surrender'),
     
-    initialize = function(player.hand = character(),
-                          dealer.face = "", bet = 0, chips = 0, num.players = 1,
-                          deck.size = 52, seen.cards = NULL) {
-      
-      self$player.hand <- player.hand
-      self$dealer.face <- dealer.face
-      self$bet <- bet
-      self$chips <- chips
-      self$num.players <- num.players
-      self$deck.size <- deck.size
-      
-      if (is.null(seen.cards)) {
-        self$seen.cards <- setNames(rep(0, 13), c('A','2','3','4','5','6','7','8','9','10','J','Q','K'))
-      } else {
-        self$seen.cards <- seen.cards
-      }
-      
-      # Validity check (can raise error early)
-      private$validate()
+    initialize = function(chips = NULL, num.players = NULL, deck.size = NULL) {
+      if (!is.null(chips)) self$chips <- chips
+      if (!is.null(num.players)) self$num.players <- num.players
+      if (!is.null(deck.size)) self$deck.size <- deck.size
     },
     
     print = function(...) {
       cat("Player hand:", paste(self$player.hand, collapse = ", "), "\n")
-      cat("Dealer face card:", self$dealer.face, "\n")
+      cat("Dealer face card:", self$dealer.hand, "\n")
       cat("Bet:", self$bet, "\n")
       cat("Chips:", self$chips, "\n")
       cat("Number of Players:", self$num.players, "\n")
@@ -46,19 +37,6 @@ BoardState <- R6Class("BoardState",
       print(self$seen.cards)
     }
   ),
-  
-  private = list(
-    validate = function() {
-      if (any(!nzchar(self$player.hand))) {
-        stop("All cards in 'player.hand' must be non-empty strings.")
-      }
-      if (!is.null(self$seen.cards)) {
-        if (any(!names(self$seen.cards) %in% c('A','2','3','4','5','6','7','8','9','10','J','Q','K'))) {
-          stop("Invalid card names in 'seen.cards'.")
-        }
-      }
-    }
-  )
 )
 
 floor.sum <- function(cards) {
@@ -72,6 +50,8 @@ floor.sum <- function(cards) {
 
 ceil.sum <- function(cards) {
   ## Treats Ace as 11 when the total is less than 21.
+  card.names = c('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K')
+  card.vals  = c( 1 ,  2 ,  3 ,  4 ,  5 ,  6 ,  7 ,  8 ,  9 ,  10 , 10 , 10 , 10)
   indices <- match(cards, card.names)
   if (any(is.na(indices))) {
     stop("Invalid card(s) detected")
@@ -83,116 +63,125 @@ ceil.sum <- function(cards) {
   total
 }
 
-gen.card.draw.probs <- function(bird) {
+draw.probs <- function(crow) {
   ## Calculates prob. of drawing each card individually.
-  deck = rep(4*bird$deck.size, 13)
-  names(deck) = bird$card.names
-  deck = deck - bird$seen.cards
+  deck = rep(4*crow$deck.size, 13)
+  names(deck) = crow$card.names
+  deck = deck - crow$seen.cards
   deck / sum(deck)
 }
 
-draw.card <- function(bird) {
+draw.card <- function(crow) {
   
-  ## Create probability distribution based on seen cards
-  deck = gen.card.draw.probs(bird)
+  ## Calculates prob. of drawing each card individually.
+  deck = rep(4*crow$deck.size, 13)
+  names(deck) = crow$card.names
+  deck = deck - crow$seen.cards
+  deck / sum(deck)
+  
   ## Draw card from deck
-  card = sample(bird$card.names, size = 1, prob = deck)
-  ## Update bird$seen.cards to contain this newly drawn card
-  bird$seen.cards[card] = bird$seen.cards[card] + 1
+  card = sample(crow$card.names, size = 1, prob = deck)
+  ## Update crow$seen.cards to contain this newly drawn card
+  crow$seen.cards[card] = crow$seen.cards[card] + 1
   card
 }
 
-game.reset <- function(bird) {
-  bird$insurance = 0
-  bird$no.actions = TRUE
+game.reset <- function(crow) {
+  ## TODO: empty index-able c() container
+  crow$player.hand = NULL
+  crow$dealer.hand = c()
+  crow$insurance = 0
+  crow$no.actions = TRUE
   
   ## When half of the deck has been used, shuffle.
-  if (sum(bird$seen.cards) > 56*bird$deck.size) {
-    bird$seen.cards = setNames(rep(0, 13), bird$card.names)
+  if (sum(crow$seen.cards) > 56*crow$deck.size) {
+    crow$seen.cards = setNames(rep(0, 13), crow$card.names)
   }
   
   ## Draw 1 card for each player
-  for (i in 1:bird$num.players) {
-    card = draw.card(bird)
+  for (i in 1:crow$num.players) {
+    card = draw.card(crow)
     ## The first card is mine.
     if (i == 1) {
-      bird$player.hand = c(card)
+      crow$player.hand = c(card)
     }
   }
   ## Dealer gets a face-up card
-  bird$dealer.face = draw.card(bird)
+  crow$dealer.hand = draw.card(crow)
   
   ## Each player gets 1 more card.
-  for (i in 1:bird$num.players) {
-    card = draw.card(bird)
+  for (i in 1:crow$num.players) {
+    card = draw.card(crow)
     ## The first card is mine.
     if (i == 1) {
-      bird$player.hand = c(bird$player.hand, card)
+      crow$player.hand = c(crow$player.hand, card)
     }
   }
 }
 
-player.turn <- function(bird) {
+player.turn <- function(crow) {
   ## Return-- player.sum, bet
   
-  move = policy(bird)
-  bird$no.actions = FALSE
+  move = policy(crow)
+  print(move)
+  crow$no.actions = FALSE
   if (move == "insurance") {
-    bird$dealer.face = c(bird$dealer.face, draw.card(bird))
-    if (bird$dealer.face == 21) {
-      bird$insurance = 1
+    crow$dealer.hand = c(crow$dealer.hand, draw.card(crow))
+    if (crow$dealer.hand == 21) {
+      crow$insurance = 1
       ## win code, insurance pays 2:1
-      return(0, bird$bet)
+      return(c(0, crow$bet))
     }
-    bird$insurance = 0
+    crow$insurance = 0
     # lose code, insurance bet is half pot
-    return(22, 0.5 * bird$bet)
+    return(c(22, 0.5 * crow$bet))
   }
   else if (move == "split") {
     ## Hand 1
-    bird$player.hand = c(bird$player.hand[1], draw.card(bird))
-    hand1 = player.turn(bird)
+    crow$player.hand = c(crow$player.hand[1], draw.card(crow))
+    hand1 = player.turn(crow)
     ## Hand 2
-    bird$player.hand = c(bird$player.hand[1], draw.card(bird))
-    hand2 = player.turn(bird)
+    crow$player.hand = c(crow$player.hand[1], draw.card(crow))
+    hand2 = player.turn(crow)
     return(c(hand1, hand2))
   }
   else if (move == "double down") {
-    bird$player.hand = c(bird$player.hand, draw.card(bird))
-    sum = ceil.sum(bird$player.hand)
-    return(c(sum, 2*bird$bet))
+    crow$player.hand = c(crow$player.hand, draw.card(crow))
+    sum = ceil.sum(crow$player.hand)
+    return(c(sum, 2*crow$bet))
   }
   else if (move == "surrender") {
-    return(22, 0.5 * bird$bet)
+    return(c(22, 0.5 * crow$bet))
   }
   else if (move == "hit") {
-    bird$player.hand = c(bird$player.hand, draw.card(bird))
-    if (ceil.sum(bird$player.hand) > 21) {
+    crow$player.hand = c(crow$player.hand, draw.card(crow))
+    if (ceil.sum(crow$player.hand) > 21) {
       ## Bust
-      return(ceil.sum(bird$player.hand), bird$bet)
+      return(c(ceil.sum(crow$player.hand), crow$bet))
     }
     ## Proceed to next action
-    return(player.turn(bird))
+    return(player.turn(crow))
   }
   else if (move == "stand") {
-    return(ceil.sum(bird$player.hand), bird$bet)
+    return(c(ceil.sum(crow$player.hand), crow$bet))
   }
 }
 
 main <- function() {
   
-  penguin <- BoardState$new(deck.size = 8, chips = 200, num.player = 1)
+  crow <- Blackjack$new()
   
   ## play 100 games
-  for (game.no in 1:100) {
+  for (game.no in 1:1) {
     
-    penguin$bet = 10 ## TODO dynamically change bet based on a strategy
-    game.reset(penguin)
-    player.turn(penguin)
-    if (penguin$insurance == 1) {
+    crow$bet = 10 ## TODO dynamically change bet based on a strategy
+    game.reset(crow)
+    print(player.turn(crow))
+    crow$print()
+    if (crow$insurance == 1) {
       ## Insurance paid, dealer has 21.
     }
-    else if (penguin$insurance == -1) {
+    else if (crow$insurance == -1) {
       ## Insurance paid, dealer does not have 21.
     }
     else {
@@ -201,26 +190,29 @@ main <- function() {
   }
 }
 
-policy <- function(bird) {
+policy <- function(crow) {
   ## Let's make flags to control for legal moves.
-  bird$legal.moves = c("hit", "stand")
+  crow$legal.moves = c("hit", "stand")
   
   # 1. split only possible when player.hand has two identical cards
-  if (length(bird$player.hand) == 2 && bird$player.hand[1] == bird$player.hand[2]) {
-    bird$legal.moves = c(bird$legal.moves, "split")
+  if (length(crow$player.hand) == 2 && crow$player.hand[1] == crow$player.hand[2]) {
+    crow$legal.moves = c(crow$legal.moves, "split")
   }
   # 2. double down only possible when player.hand has two cards
-  if (length(bird$player.hand) == 2) {
-    bird$legal.moves = c(bird$legal.moves, "double down")
+  if (length(crow$player.hand) == 2) {
+    crow$legal.moves = c(crow$legal.moves, "double down")
   }
   # 3. surrender only possible immediately on dealt
-  if (bird$no.actions) {
-    bird$legal.moves = c(bird$legal.moves, "surrender")
+  if (crow$no.actions) {
+    crow$legal.moves = c(crow$legal.moves, "surrender")
   }
   # 4. insurance only possible before all other actions
-  if (bird$no.actions && all(bird$dealer.face == 'A')) {
-    bird$legal.moves = c(bird$legal.moves, "insurance")
+  if (crow$no.actions && all(crow$dealer.hand == 'A')) {
+    crow$legal.moves = c(crow$legal.moves, "insurance")
   }
+  crow$legal.moves = c("split", "stand")
+  ## Return random action from legal.moves
+  return(sample(crow$legal.moves, 1))
 }
 
 
