@@ -17,17 +17,19 @@ Blackjack <- R6Class("Blackjack",
     legal.moves = NULL,
     insurance.paid = NULL,
     no.actions = NULL,
+    hit.on.soft.17 = TRUE,
     
     card.names = c('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'),
     card.vals  = c( 1 ,  2 ,  3 ,  4 ,  5 ,  6 ,  7 ,  8 ,  9 ,  10 , 10 , 10 , 10),
     
-    initialize = function(chips = NULL, num.players = NULL, deck.size = NULL) {
+    initialize = function(chips = NULL, num.players = NULL, deck.size = NULL, hit.on.soft.17 = NULL) {
       if (!is.null(chips)) self$chips <- chips
       if (!is.null(num.players)) {
         self$num.players <- num.players
         self$player.chips <- rep(self$player.chips, self$num.players)
       }
       if (!is.null(deck.size)) self$deck.size <- deck.size
+      if (!is.null(hit.on.soft.17)) self$hit.on.soft.17 = hit.on.soft.17
     },
     
     print = function(...) {
@@ -46,26 +48,42 @@ Blackjack <- R6Class("Blackjack",
 
 floor.sum <- function(cards) {
   ## Treats Ace as 1 always.
-  indices <- match(cards, card.names)
-  if (any(is.na(indices))) {
-    stop("Invalid card(s) detected")
-  }
-  sum(card.vals[indices])
+  card.vals <- c(A = 1, `2` = 2, `3` = 3, `4` = 4, `5` = 5, `6` = 6,
+                 `7` = 7, `8` = 8, `9` = 9, `10` = 10, J = 10, Q = 10, K = 10)
+  total <- sum(card.vals[cards])
+  total
 }
 
 ceil.sum <- function(cards) {
   ## Treats Ace as 11 when the total is less than 21.
-  card.names = c('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K')
-  card.vals  = c( 1 ,  2 ,  3 ,  4 ,  5 ,  6 ,  7 ,  8 ,  9 ,  10 , 10 , 10 , 10)
-  indices <- match(cards, card.names)
-  if (any(is.na(indices))) {
-    stop("Invalid card(s) detected")
-  }
-  total = sum(card.vals[indices])
-  if (any(cards == 'A') && total <= 11) {
-    total = total + 10
+  card.vals <- c(A = 1, `2` = 2, `3` = 3, `4` = 4, `5` = 5, `6` = 6,
+                 `7` = 7, `8` = 8, `9` = 9, `10` = 10, J = 10, Q = 10, K = 10)
+  total <- sum(card.vals[cards])
+  if ("A" %in% cards && total <= 11) {
+    total <- total + 10
   }
   total
+}
+
+
+dealer.must.hit <- function(dealer.hand, hit.on.soft.17) {
+  sum = ceil.sum(dealer.hand)
+  if (!hit.on.soft.17) {
+    return(sum < 17)
+  }
+  
+  if (sum > 17) {
+    return(FALSE)
+  } else if (sum < 17) {
+    return(TRUE)
+  } else {  ## upper.sum == 17
+    if (floor.sum(dealer.hand) == 7) {
+      ## soft 17 hand
+      return(hit.on.soft.17)
+    } else {
+      return(FALSE)
+    }
+  }
 }
 
 draw.probs <- function(bird) {
@@ -73,6 +91,9 @@ draw.probs <- function(bird) {
   deck = rep(4*bird$deck.size, 13)
   names(deck) = bird$card.names
   deck = deck - bird$seen.cards
+  # deck['10'] = deck['10'] + deck['J'] + deck['Q'] + deck['K']
+  # names(deck) = NULL
+  # deck = deck[1:10]
   deck / sum(deck)
 }
 
@@ -142,11 +163,8 @@ policy <- function(bird, player.no) {
   if (bird$no.actions[[player.no]]) {
     bird$legal.moves = c(bird$legal.moves, "surrender")
   }
-  ## TODO: calculate EV from legal moves
   ## Return random action from legal.moves
-  move = (sample(bird$legal.moves, 1))
-  print(move)
-  return(move)
+  sample(bird$legal.moves, 1)
 }
 
 player.turn <- function(bird, player.no) {
@@ -160,7 +178,7 @@ player.turn <- function(bird, player.no) {
   move = policy(bird, player.no)
   ## Define local variables
   hand = bird$player.hand[[player.no]]
-  bet = bird$player.bet[[player.no]]
+  bet = bird$player.bet[player.no]
   
   if (move == "split") {
     ## Hand 1
@@ -203,7 +221,7 @@ player.turn <- function(bird, player.no) {
 
 dealer.turn <- function(bird) {
   ## Dealer draws until hand total is 17+
-  while(ceil.sum(bird$dealer.hand) < 17) {
+  while(dealer.must.hit(bird$dealer.hand, bird$hit.on.soft.17)) {
     bird$dealer.hand = c(bird$dealer.hand, draw.card(bird))
   }
   dealer.sum = ceil.sum(bird$dealer.hand)
@@ -211,15 +229,23 @@ dealer.turn <- function(bird) {
   for (player.no in 1:bird$num.players) {
     result = bird$player.results[[player.no]]
     for (i in seq(1, length(result), by=2)) {
-      if (result[i] > 21 || result[i] < dealer.sum) {
-        ## Player losses -- total > 21 or total < dealer
+      if (result[i] > 21) {
+        ## Player losses -- total > 21
+        bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - result[i+1]
+      } else if (dealer.sum > 21) {
+        ## Player win -- dealer total > 21
+        bird$player.chips[[player.no]] = bird$player.chips[[player.no]] + result[i+1]
+      } else if (result[i] < dealer.sum) {
+        ## Player losses -- dealer > player
         bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - result[i+1]
       } else if (result[i] > dealer.sum) {
-        ## Player wins -- total > dealer
+        ## Player wins -- total > dealer.sum
         bird$player.chips[[player.no]] = bird$player.chips[[player.no]] + result[i+1]
       } else {
         ## Push -- dealer & player tie. No change in chips
       }
+      ## Set bet to zero
+      bird$player.bet[player.no] = 0
     }
   }
 }
@@ -237,7 +263,11 @@ main <- function() {
     game.reset(bird)
     ## Ask all players to pay insurance when applicable
     if (length(bird$dealer.hand) == 1 && bird$dealer.hand[1] == 'A') {
-      insurance.policy(bird)
+      ## Each player may separately call insurance
+      for (player.no in 1:bird$num.players) {
+        ## TODO separate insurance action from insurance EV
+        insurance.policy(bird, player.no)
+      }
     }
     ## Each player takes a turn in order
     for (player.no in 1:bird$num.players) {
