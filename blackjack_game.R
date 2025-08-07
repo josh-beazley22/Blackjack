@@ -113,6 +113,7 @@ draw.card <- function(bird) {
 
 game.reset <- function(bird) {
   
+  ## Reset fields
   bird$player.hand = list()
   bird$player.results = list()
   bird$dealer.hand = c()
@@ -140,9 +141,17 @@ game.reset <- function(bird) {
 }
 
 insurance.policy <- function(bird) {
-  ## Special method.
-  ## Compute EV of: win insurance bet + improvement in EV by losing insurance
+ 
+  # DON'T CALL draw.card()-- instead generate random number & assign insurance.paid code
   
+  ## EV = 
+  ## + 0 * P(10-valued card)
+  ## - bet/2 * P(other card)
+  ## + bet * EV(insurance == 1)
+  ## - bet * EV(insurance == 0)
+  
+  ## If a player chooses to call insurance, use insurance code
+  # bird$player.results[[player.no]] = c(77, 0.5 * bird$player.bet[[player.no]])
 }
 
 policy <- function(bird, player.no) {
@@ -167,7 +176,6 @@ policy <- function(bird, player.no) {
 }
 
 player.turn <- function(bird, player.no) {
-  if (is.null(player.no)) stop("player.no is NULL")
   
   ## Reset player results
   bird$player.results[[player.no]] = c()
@@ -219,6 +227,18 @@ player.turn <- function(bird, player.no) {
 }
 
 dealer.turn <- function(bird) {
+  
+  ## When insurance is paid, the face-down card cannot be 10-valued.
+  if (length(bird$dealer.hand) == 1 && bird$insurance.paid == 1) {
+    draw.probs = draw.probabilities(bird)
+    ## Remove all 10 draws
+    draw.probs = draw.probs[1:9] / sum(draw.probs[1:9])
+    ## sample from draw.probs to draw a card
+    card = names(sample(draw.probs, 1))
+    bird$dealer.hand = c(bird$dealer.hand, card)
+    ## mark down as a seen card
+    bird$seen.cards[card] = bird$seen.cards[card] + 1
+  }
   ## Dealer draws until hand total is 17+
   while(dealer.must.hit(bird$dealer.hand, bird$hit.on.soft.17)) {
     bird$dealer.hand = c(bird$dealer.hand, draw.card(bird))
@@ -228,7 +248,10 @@ dealer.turn <- function(bird) {
   for (player.no in 1:bird$num.players) {
     result = bird$player.results[[player.no]]
     for (i in seq(1, length(result), by=2)) {
-      if (result[i] > 21) {
+      if (result[i] == 21 && length(bird$player.hand[i]) == 2) {
+        ## Player wins -- Blackjack pays out 1.5x bet
+        bird$player.chips[[player.no]] = bird$player.chips[[player.no]] + 1.5 * result[i+1]
+      } else if (result[i] > 21) {
         ## Player losses -- total > 21
         bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - result[i+1]
       } else if (dealer.sum > 21) {
@@ -261,11 +284,20 @@ main <- function() {
     ## Deal cards to every player
     game.reset(bird)
     ## Ask all players to pay insurance when applicable
-    if (length(bird$dealer.hand) == 1 && bird$dealer.hand[1] == 'A') {
-      ## Each player may separately call insurance
-      for (player.no in 1:bird$num.players) {
-        ## TODO separate insurance action from insurance EV
-        insurance.policy(bird, player.no)
+    if (bird$dealer.hand[1] == 'A') {
+      ## Each player chooses if they would like to buy insurance
+      insurance.policy(bird)
+      if (bird$insurance.paid == 21) {
+        ## Dealer has blackjack. Payout insurance.
+        for (player.no in 1:bird$num.players) {
+          result = bird$player.results[[player.no]]
+          if (result[1] != 77) {
+            ## player did not call for insurance. player loses bet.
+            bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - bird$player.bet[[player.no]]
+          }
+        }
+        ## Dealer has blackjack. Move to next game.
+        next
       }
     }
     ## Each player takes a turn in order

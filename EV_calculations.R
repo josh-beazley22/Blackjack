@@ -9,17 +9,13 @@ simulate.dealer <- function(bird) {
   cards.left['10'] = cards.left['J'] + cards.left['Q'] + cards.left['K']
   cards.left = cards.left[1:10]
   
-  ## If insurance has been lost, then dealer cannot hold a 10-value card
-  if (bird$insurance.paid == 1) {
-    cards.left = cards.left[1:9]
-  }
-  
   ## Run simulation (actually an exact computation)
   simulate.dealer.helper(
     bird$dealer.hand,
     cards.left,
     prob = 1,
-    soft.17 = bird$hit.on.soft.17
+    soft.17 = bird$hit.on.soft.17,
+    insurance = bird$insurance.paid
   )
   ## Sanity check
   if (abs(sum(dealer.bins) - 1) > 1e-8) {
@@ -28,7 +24,7 @@ simulate.dealer <- function(bird) {
   dealer.bins
 }
 
-simulate.dealer.helper <- function(dealer.hand, deck, prob, soft.17) {
+simulate.dealer.helper <- function(dealer.hand, deck, prob, soft.17, insurance) {
   total <- ceil.sum(dealer.hand)
   
   # Dealer busts
@@ -44,12 +40,17 @@ simulate.dealer.helper <- function(dealer.hand, deck, prob, soft.17) {
   # Dealer hits
   total.cards <- sum(deck)
   for (card in names(deck)) {
+    if (insurance == 1 && card == '10') {
+      ## Insurance requires that dealer's face-down card must not be 10-valued.
+      next
+    }
     if (deck[card] > 0) {
+      ## card is draw from the deck with probability p.
       new.deck <- deck
       new.deck[card] <- new.deck[card] - 1
       new.hand <- c(dealer.hand, card)
       p <- prob * (deck[card] / total.cards)
-      simulate.dealer.helper(new.hand, new.deck, p, soft.17)
+      simulate.dealer.helper(new.hand, new.deck, p, soft.17, insurance = 0)
     }
   }
 }
