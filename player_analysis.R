@@ -21,23 +21,6 @@ stand.EV <- function(penguin) {
   loss.prob <- sum(dealer.sim[, col.names > player.sum])
   win.prob - loss.prob
 }
-
-hit.EV <- function(penguin) {
-  
-  dealer.sim <- dealer.library[dealer.face, ]
-  
-  ## Iterate for every card player could draw
-  for (i in 1:13) {
-    kiwi = new("board.state", 
-               player.hand = c(penguin@player.hand, card.names[i]),
-               ace = (penguin@ace && card.names[i] == 'A'),
-               dealer.face = penguin@dealer.face,
-               deck.size = penguin@deck.size, 
-               seen.cards = c(penguin@seen.cards, card.names[i]))
-    ## TODO: look up EV of kiwi.
-    ## summation: prob(card) * EV
-  }
-}
   
 hit.EV.legacy <- function(penguin) {
   

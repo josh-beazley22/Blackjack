@@ -1,108 +1,46 @@
 
 
-dealer.sim <- function(bird, M = 1e4) {
-  ## Runs a simulation of M hands using card counting to get probs of 
-  ## each dealer total.
+simulate.dealer <- function(bird) {
+  ## Initialize
+  dealer.bins <<- c("17"=0, "18"=0, "19"=0, "20"=0, "21"=0, "22+"=0)
+  cards.left = rep(4*bird$deck.size, 13) - bird$seen.cards
   
-  ## Store variables from bird object locally
-  dealer.results <- numeric(M)
-  dealer.hand <- bird$dealer.hand
-  deck <- rep(4*bird$deck.size, 13) - bird$seen.cards
-  hit.on.soft.17 <- bird$hit.on.soft.17
+  ## Collapse 10, J, Q, K into one bin.
+  cards.left['10'] = cards.left['J'] + cards.left['Q'] + cards.left['K']
+  cards.left = cards.left[1:10]
   
-  for (epoch in 1:M) {
-    curr.hand <- dealer.hand
-    ## shuffle a deck then iterate an index for each drawn card
-    shuffled.deck = sample(rep(names(deck), times = deck))
-    i = 1
-    while (dealer.must.hit(curr.hand, hit.on.soft.17)) {
-      curr.hand = c(curr.hand, shuffled.deck[i])
-      i = i + 1
-    }
-    dealer.results[epoch] = ceil.sum(curr.hand)
+  ## If insurance has been lost, then dealer cannot hold a 10-value card
+  if (bird$insurance.paid == 1) {
+    cards.left = cards.left[1:9]
   }
-  # Split results so dealer busts are grouped as one category
-  tbl = table(dealer.results)
-  tbl_main <- tbl[names(tbl) %in% as.character(17:21)]
-  tbl_22plus <- sum(tbl[as.numeric(names(tbl)) >= 22])
   
-  # Add 22+ bin
-  tbl_cleaned <- c(tbl_main, `22+` = tbl_22plus)
-  return(tbl_cleaned / M)
+  ## Run simulation (actually an exact computation)
+  simulate.dealer.helper(
+    bird$dealer.hand,
+    cards.left,
+    prob = 1,
+    soft.17 = bird$hit.on.soft.17
+  )
+  ## Sanity check
+  if (abs(sum(dealer.bins) - 1) > 1e-8) {
+    stop("Dealer simulation probabilities do not sum to 1. Invalid simulation.")
+  }
+  dealer.bins
 }
 
-fast.sim <- function(bird, M = 1e4) {
-  ## Runs a simulation of M hands using card counting to get probs of 
-  ## each dealer total.
-  
-  ## Store variables from bird object locally
-  dealer.results <- numeric(M)
-  dealer.hand <- bird$dealer.hand
-  deck <- rep(4*bird$deck.size, 13) - bird$seen.cards
-  hit.on.soft.17 <- bird$hit.on.soft.17
-  
-  ## create M stacks of uniquely shuffled decks
-  shuffled.matrix <- t(replicate(M, sample(rep(names(deck), times = deck))))
-  ## set first column(s) to dealer.hand
-  shuffled.matrix[, seq_along(dealer.hand)] <- rep(dealer.hand, each = nrow(shuffled.matrix))
-  
-  card.vals <- c(A = 1, `2` = 2, `3` = 3, `4` = 4, `5` = 5, `6` = 6,
-                 `7` = 7, `8` = 8, `9` = 9, `10` = 10, J = 10, Q = 10, K = 10)
-  value.matrix <- matrix(card.vals[shuffled.matrix], nrow = M)
-  
-  # Track running sums and soft aces count
-  row.sums <- rep(0, M)
-  ace.hand <- rep(FALSE, M)
-  finished <- rep(FALSE, M)
-  
-  for (col in 1:ncol(value.matrix)) {
-    active <- !finished
-    
-    # Add current card values to active hands
-    row.sums[active] <- row.sums[active] + value.matrix[active, col]
-    ace.hand[shuffled.matrix[active, col] == "A"] <- TRUE
-    # Count Ace as 11 when applicable
-    soft.ace.hand = ace.hand & row.sums <= 11
-    temp.sums = row.sums
-    temp.sums[soft.ace.hand] = temp.sums[soft.ace.hand] + 10
-    
-    # Mark appropriate hands as finished
-    if (hit.on.soft.17) {
-      finished[temp.sums > 17] = TRUE
-      finished[temp.sums == 17 & !soft.ace.hand] = TRUE
-    } else {
-      finished[temp.sums >= 17] = TRUE
-    }
-    if (all(finished)) break
-  }
-  ## convert all soft-ace hands
-  row.sums[soft.ace.hand] = row.sums[soft.ace.hand] + 10
-  # Split results so dealer busts are grouped as one category
-  tbl = table(row.sums)
-  tbl_main <- tbl[names(tbl) %in% as.character(17:21)]
-  tbl_22plus <- sum(tbl[as.numeric(names(tbl)) >= 22])
-  
-  # Add 22+ bin
-  tbl_cleaned <- c(tbl_main, `22+` = tbl_22plus)
-  return(tbl_cleaned / M)
-}
-
-dealer.bins <- c("17"=0, "18"=0, "19"=0, "20"=0, "21"=0, "22+"=0)
-simulate.dealer(bird, bird$dealer.hand,rep(4*bird$deck.size, 13) - bird$seen.cards, 1)
-simulate.dealer <- function(bird, dealer.hand, deck, prob) {
-  # Recursive function to simulate dealer outcomes
+simulate.dealer.helper <- function(dealer.hand, deck, prob, soft.17) {
   total <- ceil.sum(dealer.hand)
   
+  # Dealer busts
   if (total > 21) {
     dealer.bins["22+"] <<- dealer.bins["22+"] + prob
     return()
   }
-  
-  else if (!dealer.must.hit(dealer.hand, bird$hit.on.soft.17)) {
+  # Dealer stands
+  else if (!dealer.must.hit(dealer.hand, soft.17)) {
     dealer.bins[as.character(total)] <<- dealer.bins[as.character(total)] + prob
     return()
   }
-  
   # Dealer hits
   total.cards <- sum(deck)
   for (card in names(deck)) {
@@ -111,13 +49,81 @@ simulate.dealer <- function(bird, dealer.hand, deck, prob) {
       new.deck[card] <- new.deck[card] - 1
       new.hand <- c(dealer.hand, card)
       p <- prob * (deck[card] / total.cards)
-      simulate.dealer(bird, new.hand, new.deck, p)
+      simulate.dealer.helper(new.hand, new.deck, p, soft.17)
     }
   }
 }
 
+compute.EV <- function(bird) {
+  
+  dealer.sim <- simulate.dealer(bird)
+  dealer.bust = dealer.sim['22+']
+  dealer.sim = dealer.sim[1:5]
+  
+  ## Compute sum for each player
+  player.sum = c()
+  for (hand in bird$player.hand) {
+    player.sum = c(player.sum, ceil.sum(hand))
+  }
+  
+  ## Compute stand EV
+  stand.EV = numeric(bird$num.players)
+  for (i in 1:bird$num.players) {
+    if (player.sum[i] > 21) {
+      stand.EV[i] = -1
+      next
+    }
+    win.prob = dealer.bust + sum(dealer.sim[as.numeric(names(dealer.sim)) < player.sum[i]])
+    lose.prob = sum(dealer.sim[as.numeric(names(dealer.sim)) > player.sum[i]])
+    stand.EV[i] = win.prob - lose.prob
+  }
+  
+  ## Optimal hitting algorithm
+}
 
 
+double.down.EV <- function(bird, dealer.sim) {
+  ## Assumes that I hit once then stand.
+  ## Useful for computing EV in double down scenarios
+  
+  EV = numeric(bird$num.players)
+  for (i in 1:bird$num.players) {
+    
+    draw.probs = draw.probabilities(bird)
+    cards = Map(c, rep(bird$player.hand[i], 10), bird$card.names[1:10])
+    card.sums = numeric(10)
+    for (j in 1:10) {
+      card.sums[j] = ceil.sum(cards[[j]])
+    }
+
+    ## Calculate probability of each hand total.
+    probs = c(sum(draw.probs[card.sums < 17]), 
+              sum(draw.probs[card.sums == 17]), 
+              sum(draw.probs[card.sums == 18]),
+              sum(draw.probs[card.sums == 19]), 
+              sum(draw.probs[card.sums == 20]), 
+              sum(draw.probs[card.sums == 21]), 
+              sum(draw.probs[card.sums > 21]))
+    
+    ## Compare probability of player sum reaching a total to the dealer reaching that total
+    win.EV = probs[1]*dealer.sim['22+'] +
+      probs[2]*dealer.sim['22+'] +
+      probs[3]*sum(dealer.sim[c('22+', '17')]) + 
+      probs[4]*sum(dealer.sim[c('22+', '17', '18')]) +
+      probs[5]*sum(dealer.sim[c('22+', '17', '18', '19')]) +
+      probs[6]*sum(dealer.sim[c('22+', '17', '18', '19', '20')])
+    
+    loss.EV = probs[1]*sum(dealer.sim[c('17', '18', '19', '20', '21')]) + 
+      probs[2]*sum(dealer.sim[c('18', '19', '20', '21')]) + 
+      probs[3]*sum(dealer.sim[c('19', '20', '21')]) + 
+      probs[4]*sum(dealer.sim[c('20', '21')]) +
+      probs[5]*sum(dealer.sim[c('21')]) +
+      probs[6]*0 +
+      probs[7]*1
+    
+    EV[i] = 2*(win.EV - loss.EV)
+  }
+}
 
 
 

@@ -15,7 +15,7 @@ Blackjack <- R6Class("Blackjack",
     deck.size = 8,
     seen.cards =  setNames(rep(0, 13), c('A','2','3','4','5','6','7','8','9','10','J','Q','K')),
     legal.moves = NULL,
-    insurance.paid = NULL,
+    insurance.paid = NULL, # 1 = insurance lost, 21 = insurance won, 0 = no insurance.
     no.actions = NULL,
     hit.on.soft.17 = TRUE,
     
@@ -86,14 +86,13 @@ dealer.must.hit <- function(dealer.hand, hit.on.soft.17) {
   }
 }
 
-draw.probs <- function(bird) {
+draw.probabilities <- function(bird) {
   ## Calculates prob. of drawing each card individually.
   deck = rep(4*bird$deck.size, 13)
   names(deck) = bird$card.names
   deck = deck - bird$seen.cards
-  # deck['10'] = deck['10'] + deck['J'] + deck['Q'] + deck['K']
-  # names(deck) = NULL
-  # deck = deck[1:10]
+  deck['10'] = deck['10'] + deck['J'] + deck['Q'] + deck['K']
+  deck = deck[1:10]
   deck / sum(deck)
 }
 
