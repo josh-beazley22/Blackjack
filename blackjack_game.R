@@ -20,7 +20,7 @@ Blackjack <- R6Class("Blackjack",
     hit.on.soft.17 = TRUE,
     
     card.names = c('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'),
-    card.vals  = c( 1 ,  2 ,  3 ,  4 ,  5 ,  6 ,  7 ,  8 ,  9 ,  10 , 10 , 10 , 10),
+    card.vals  = setNames(c(1,2,3,4,5,6,7,8,9,10,10,10,10), c('A','2','3','4','5','6','7','8','9','10','J','Q','K')),
     
     initialize = function(chips = NULL, num.players = NULL, deck.size = NULL, hit.on.soft.17 = NULL) {
       if (!is.null(chips)) self$chips <- chips
@@ -140,41 +140,6 @@ game.reset <- function(bird) {
   }
 }
 
-insurance.policy <- function(bird) {
- 
-  # DON'T CALL draw.card()-- instead generate random number & assign insurance.paid code
-  
-  ## EV = 
-  ## + 0 * P(10-valued card)
-  ## - bet/2 * P(other card)
-  ## + bet * EV(insurance == 1)
-  ## - bet * EV(insurance == 0)
-  
-  ## If a player chooses to call insurance, use insurance code
-  # bird$player.results[[player.no]] = c(77, 0.5 * bird$player.bet[[player.no]])
-}
-
-policy <- function(bird, player.no) {
-  ## Let's make flags to control for legal moves.
-  bird$legal.moves = c("hit", "stand")
-  hand <- bird$player.hand[[player.no]]
-  
-  # 1. split only possible when player.hand has two identical cards
-  if (length(hand) == 2 && hand[1] == hand[2]) {
-    bird$legal.moves = c(bird$legal.moves, "split")
-  }
-  # 2. double down only possible when player.hand has two cards
-  if (length(hand) == 2) {
-    bird$legal.moves = c(bird$legal.moves, "double down")
-  }
-  # 3. surrender only possible immediately on dealt
-  if (bird$no.actions[[player.no]]) {
-    bird$legal.moves = c(bird$legal.moves, "surrender")
-  }
-  ## Return random action from legal.moves
-  sample(bird$legal.moves, 1)
-}
-
 player.turn <- function(bird, player.no) {
   
   ## Reset player results
@@ -287,7 +252,7 @@ main <- function() {
     if (bird$dealer.hand[1] == 'A') {
       ## Each player chooses if they would like to buy insurance
       insurance.policy(bird)
-      if (bird$insurance.paid == 21) {
+      if (bird$insurance.paid == 21) { # TODO: draw random number
         ## Dealer has blackjack. Payout insurance.
         for (player.no in 1:bird$num.players) {
           result = bird$player.results[[player.no]]
