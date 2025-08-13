@@ -59,10 +59,11 @@ simulate.dealer.helper <- function(dealer.hand, deck, prob, soft.17, insurance) 
   }
 }
 
-double.down.EV <- function(bird, dealer.sim) {
+double.down.EV <- function(bird) {
   ## Follows player policy of hitting once then stand.
   ## Useful for computing EV in double down scenarios
   
+  dealer.sim = simulate.dealer(bird)
   EV = numeric(bird$num.players)
   for (i in 1:bird$num.players) {
     
@@ -183,46 +184,61 @@ compute.EV <- function(bird) {
       hit.EV.ace
     ))
   }
-  return(list(sto.ace, sto.no.ace, stand.EV))
+  EV.table = list(sto.ace, sto.no.ace, stand.EV)
+  names(EV.table) = c("ace", "no.ace", "stand")
+  return(EV.table)
 }
 
 
-policy <- function(bird, player.no) {
-  ## Let's make flags to control for legal moves.
-  legal.moves = c("hit", "stand")
-  hand <- bird$player.hand[[player.no]]
+policy <- function(bird, player.no) {  # TODO: compute policy separately per player.
+  ## EV -- list(hit.ace, hit.no.ace, stand)
   
-  # 1. split only possible when player.hand has two identical cards
-  if (length(hand) == 2 && hand[1] == hand[2]) {
-    legal.moves = c(legal.moves, "split")
-  }
-  # 2. double down only possible when player.hand has two cards
-  if (length(hand) == 2) {
-    legal.moves = c(legal.moves, "double down")
-  }
-  # 3. surrender only possible immediately on dealt
-  if (bird$no.actions[[player.no]]) {
-    legal.moves = c(legal.moves, "surrender")
-  }
-  ## TODO: for simulations, handle all players at once using one call of compute.EV
-  ## Build list of EV for each action, then select action with highest EV
-  optimal.action = list()
-  penguin = bird$clone(deep = TRUE)
-  hit.or.stand = compute.EV(bird, player.no)
-  optimal.action = c(optimal.action, list(hit.or.stand))
-  
-  if (any(legal.moves == "split")) {
-    penguin$player.hand = penguin$player.hand[1]
-    split = compute.EV(penguin)
-    split[2] = 2*split[2]  # split doubles bet
-  }
-  if (any(legal.moves == "double down")) {
-    double.down = double.down.EV(penguin, player.no)
-    double.down[2] = 2*double.down[2]  # double down doubles bet
-  }
-  if (any(legal.moves == "surrender")) {
+  EV = compute.EV(bird)
+  for (player.no in 1:bird$num.players) {
+    ## Find optimal move by looking up EV for each legal move
+    optimal.action <- data.frame(action=character(), value=numeric(), stringsAsFactors=FALSE)
+    hand <- bird$player.hand[[player.no]]
+    ## Hit action. Ace and no ace hands stored separately
+    if (any(hand == 'A')) {
+      best = EV[['ace']][floor.sum(hand)]
+    } else {
+      best = EV[['no.ace']][floor.sum(hand)]
+    }
+    optimal.action <- rbind(optimal.action, data.frame(action="hit", value=best))
+    ## Stand action.
+    optimal.action <- rbind(optimal.action, 
+          data.frame(action="stand", value=EV[['stand']][ceil.sum(hand)]))
+    
+    # Split -- only possible when player.hand has two identical cards
+    if (length(hand) == 2 && hand[1] == hand[2]) {
+      best = ifelse(
+        hand[1] == 'A',
+        max(EV[['ace']][floor.sum(hand)], EV[['stand']][ceil.sum(hand)]),
+        max(EV[['no.ace']][floor.sum(hand)], EV[['stand']][ceil.sum(hand)])
+      )
+      optimal.action <- rbind(optimal.action, data.frame(action="split", value=2*best))
+    }
+    # Double Down -- only possible when player.hand has two cards
+    if (length(hand) == 2) {  # TODO
+      best = double.down.EV(bird)
+      optimal.action <- rbind(optimal.action, data.frame(action="double down", value=best))
+    }
+    # Surrendering -- only possible immediately when dealt
+    if (bird$no.actions[[player.no]]) {
+      optimal.action <- rbind(optimal.action, data.frame(action="surrender", value=-0.5))
+    }
+    
+    ## Find best action
+    max.index <- which.max(sapply(x, function(item) item[[2]]))
+    bird$player.action[[player.no]] = optimal.action[[max.index]]
+    
     
   }
+ 
+  
+  
+  
+
 }
 
 insurance.policy <- function(bird) {
@@ -250,8 +266,10 @@ insurance.policy <- function(bird) {
   bird$insurance.paid = 0
   no.insurance = compute.EV(bird)
   
+  ## TODO: why aren't these equal?
   hand = bird$player.hand[[1]]
   foo = -draw.probs[[10]] + sum(draw.probs[1:9]) * lookup.EV(yes.insurance, hand)[[2]]
+  lookup.EV(no.insurance, hand)[[2]]
   
   insurance.EV = numeric(bird$num.players)
   for (p in 1:bird$num.players) {
