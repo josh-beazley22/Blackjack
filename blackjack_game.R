@@ -46,6 +46,7 @@ Blackjack <- R6Class("Blackjack",
   ),
 )
 
+
 floor.sum <- function(cards) {
   ## Treats Ace as 1 always.
   card.vals <- c(A = 1, `2` = 2, `3` = 3, `4` = 4, `5` = 5, `6` = 6,
@@ -53,6 +54,7 @@ floor.sum <- function(cards) {
   total <- sum(card.vals[cards])
   total
 }
+
 
 ceil.sum <- function(cards) {
   ## Treats Ace as 11 when the total is less than 21.
@@ -67,6 +69,7 @@ ceil.sum <- function(cards) {
 
 
 dealer.must.hit <- function(dealer.hand, hit.on.soft.17) {
+  ## Returns Boolean true if the dealer must hit
   sum = ceil.sum(dealer.hand)
   if (!hit.on.soft.17) {
     return(sum < 17)
@@ -86,6 +89,7 @@ dealer.must.hit <- function(dealer.hand, hit.on.soft.17) {
   }
 }
 
+
 draw.probabilities <- function(bird) {
   ## Calculates prob. of drawing each card individually.
   deck = rep(4*bird$deck.size, 13)
@@ -95,6 +99,7 @@ draw.probabilities <- function(bird) {
   deck = deck[1:10]
   deck / sum(deck)
 }
+
 
 draw.card <- function(bird) {
   
@@ -111,6 +116,7 @@ draw.card <- function(bird) {
   card
 }
 
+
 game.reset <- function(bird) {
   
   ## Reset fields
@@ -119,9 +125,12 @@ game.reset <- function(bird) {
   bird$dealer.hand = c()
   bird$insurance.paid = 0
   bird$no.actions = rep(TRUE, bird$num.players)
+  for (i in 1:bird$num.players) {
+    bird$player.results[[i]] = c()
+  }
   
   ## When half of the deck has been used, shuffle.
-  if (sum(bird$seen.cards) > 56*bird$deck.size) {
+  if (sum(bird$seen.cards) > 0.5*52*bird$deck.size) {
     bird$seen.cards = setNames(rep(0, 13), bird$card.names)
   }
   
@@ -140,56 +149,6 @@ game.reset <- function(bird) {
   }
 }
 
-player.turn <- function(bird, player.no) {
-  
-  ## Reset player results
-  bird$player.results[[player.no]] = c()
-  ## Player has taken an action, so surrendering is not allowed
-  bird$no.actions[player.no] = FALSE
-  ## Find best move from policy
-  move = policy(bird, player.no)
-  ## Define local variables
-  hand = bird$player.hand[[player.no]]
-  bet = bird$player.bet[player.no]
-  
-  if (move == "split") {
-    ## Hand 1
-    bird$player.hand[[player.no]] = c(hand[1], draw.card(bird))
-    player.turn(bird, player.no)
-    hand1.result = bird$player.results[[player.no]]
-    ## Hand 2
-    bird$player.hand[[player.no]] = c(hand[1], draw.card(bird))
-    player.turn(bird, player.no)
-    ## Combine Results
-    bird$player.results[[player.no]] = c(bird$player.results[[player.no]], hand1.result)
-  }
-  else if (move == "double down") {
-    ## draw card
-    bird$player.hand[[player.no]] = c(hand, draw.card(bird))
-    ## calc sum
-    sum = ceil.sum(bird$player.hand[[player.no]])
-    ## store result
-    bird$player.results[[player.no]] = c(sum, 2*bet)
-  }
-  else if (move == "surrender") {
-    ## store loss code and bet size
-    bird$player.results[[player.no]] = c(22, 0.5 * bet)
-  }
-  else if (move == "hit") {
-    bird$player.hand[[player.no]] = c(hand, draw.card(bird))
-    sum = ceil.sum(bird$player.hand[[player.no]])
-    if (sum > 21) {
-      ## Bust
-      bird$player.results[[player.no]] = c(sum, bet)
-    } else {
-      ## Proceed to next action
-      player.turn(bird, player.no)
-    }
-  }
-  else if (move == "stand") {
-    bird$player.results[[player.no]] = c(ceil.sum(hand), bet)
-  }
-}
 
 dealer.turn <- function(bird) {
   
@@ -237,12 +196,13 @@ dealer.turn <- function(bird) {
   }
 }
 
-main <- function() {
+
+main <- function(M) {
   
-  bird <- Blackjack$new(num.players = 3)
+  bird <- Blackjack$new(num.players = 1)
   
   ## play 100 hands
-  for (game.no in 1:1) {
+  for (game.no in 1:M) {
     
     ## TODO dynamically change bet based on a strategy
     bird$player.bet = rep(10, bird$num.players)
@@ -252,22 +212,27 @@ main <- function() {
     if (bird$dealer.hand[1] == 'A') {
       ## Each player chooses if they would like to buy insurance
       insurance.policy(bird)
-      if (bird$insurance.paid == 21) { # TODO: draw random number
-        ## Dealer has blackjack. Payout insurance.
-        for (player.no in 1:bird$num.players) {
-          result = bird$player.results[[player.no]]
-          if (result[1] != 77) {
-            ## player did not call for insurance. player loses bet.
-            bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - bird$player.bet[[player.no]]
+      if (bird$insurance.paid == 1) {  ## insurance was bought by 1 or more players
+        draw.probs = draw.probabilities(bird)
+        if (names(sample(draw.probs, 1)) == '10') {
+          ## Dealer drew blackjack. Payout insurance.
+          for (player.no in 1:bird$num.players) {
+            result = bird$player.results[[player.no]]
+            if (result[1] != 77) {  ## insurance code
+              ## player did not call for insurance. player loses bet.
+              bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - bird$player.bet[[player.no]]
+            }
           }
         }
-        ## Dealer has blackjack. Move to next game.
+        ## Dealer drew blackjack. Move to next game.
         next
       }
     }
-    ## Each player takes a turn in order
+    ## Each player may abide by a different policy-- optimal, random, user input.
+    
     for (player.no in 1:bird$num.players) {
-      player.turn(bird, player.no)
+      ## This sim allows all players to run my optimal blackjack policy
+      player.turn(bird, player.no, "optimal")
     }
     ## Dealer draws and pays winners
     dealer.turn(bird)
