@@ -15,17 +15,18 @@ Blackjack <- R6Class("Blackjack",
     deck.size = 8,
     seen.cards =  setNames(rep(0, 13), c('A','2','3','4','5','6','7','8','9','10','J','Q','K')),
     legal.moves = NULL,
-    insurance.paid = NULL, # 1 = insurance lost, 21 = insurance won, 0 = no insurance.
-    no.actions = NULL,
+    insurance.paid = 0, # 1 = insurance lost, 21 = insurance won, 0 = no insurance.
+    no.actions = TRUE,
     hit.on.soft.17 = TRUE,
     
     card.names = c('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'),
     card.vals  = setNames(c(1,2,3,4,5,6,7,8,9,10,10,10,10), c('A','2','3','4','5','6','7','8','9','10','J','Q','K')),
     
     initialize = function(chips = NULL, num.players = NULL, deck.size = NULL, hit.on.soft.17 = NULL) {
-      if (!is.null(chips)) self$chips <- chips
+      if (!is.null(chips)) self$player.chips <- chips
       if (!is.null(num.players)) {
         self$num.players <- num.players
+        self$no.actions <- rep(TRUE, self$num.players)
         self$player.chips <- rep(self$player.chips, self$num.players)
       }
       if (!is.null(deck.size)) self$deck.size <- deck.size

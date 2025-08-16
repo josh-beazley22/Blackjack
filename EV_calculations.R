@@ -71,11 +71,6 @@ insurance.policy <- function(bird) {
   ## + bet * EV(insurance == 1)
   ## - bet * EV(insurance == 0)
   
-  ## EV(no insurance) =
-  ## - bet * P(10-valued card)
-  ## + bet * P(other card) * EV(insurance == 1)
-  ## == EV(insurance == 0)
-  
   ## If a player chooses to call insurance, use insurance code
   # bird$player.results[[player.no]] = c(77, 0.5 * bird$player.bet[[player.no]])
   
@@ -87,8 +82,11 @@ insurance.policy <- function(bird) {
   no.insurance = compute.EV(bird)
   
   ## TODO: why aren't these equal?
+  ## EV(insurance == 0) =
+  ##   - bet * P(10-valued card)
+  ##   + bet * P(other card) * EV(insurance == 1)
   hand = bird$player.hand[[1]]
-  foo = -draw.probs[[10]] + sum(draw.probs[1:9]) * lookup.EV(yes.insurance, hand)[[2]]
+  -draw.probs[[10]] + sum(draw.probs[1:9]) * lookup.EV(yes.insurance, hand)[[2]]
   lookup.EV(no.insurance, hand)[[2]]
   
   insurance.EV = numeric(bird$num.players)
@@ -99,8 +97,7 @@ insurance.policy <- function(bird) {
       lookup.EV(yes.insurance, hand)[[2]] - lookup.EV(no.insurance, hand)[[2]]
   }
   insurance.EV
-  ## TODO: there is no buy insurance option in player.turn()
-  ## TODO: does only 1 player need to buy insurance
+  ## TODO: Is it optimal for only 1 player buy insurance?
 }
 
 
@@ -283,10 +280,11 @@ lookup.best.action <- function(bird, player.no, EV) {
   
   # Split -- only possible when player.hand has two identical cards
   if (length(hand) == 2 && hand[1] == hand[2]) {
+    sub.hand = hand[1]
     best = ifelse(
       hand[1] == 'A',
-      max(EV[['ace']][floor.sum(hand)], EV[['stand']][ceil.sum(hand)]),
-      max(EV[['no.ace']][floor.sum(hand)], EV[['stand']][ceil.sum(hand)])
+      max(EV[['ace']][floor.sum(sub.hand)], EV[['stand']][ceil.sum(sub.hand)]),
+      max(EV[['no.ace']][floor.sum(sub.hand)], EV[['stand']][ceil.sum(sub.hand)])
     )
     optimal.action <- rbind(optimal.action, data.frame(action="split", value=2*best))
   }
@@ -299,17 +297,19 @@ lookup.best.action <- function(bird, player.no, EV) {
   if (bird$no.actions[[player.no]]) {
     optimal.action <- rbind(optimal.action, data.frame(action="surrender", value=-0.5))
   }
-  
-  ## Find & return best action
-  max.index <- which.max(optimal.action[[2]])
-  optimal.action[max.index, 1]
+  optimal.action
 }
 
 
 optimal.policy <- function(bird, player.no) {
   ## Return best move according to my EV calculations.
   EV = compute.EV(bird)
-  lookup.best.action(bird, player.no, EV)
+  table = lookup.best.action(bird, player.no, EV)
+  print(table)
+  
+  ## Find & return best action
+  max.index <- which.max(table[[2]])
+  table[max.index, 1]
 }
 
 
