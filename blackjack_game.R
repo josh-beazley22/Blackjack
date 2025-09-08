@@ -11,10 +11,11 @@ Blackjack <- R6Class("Blackjack",
     
     num.players = 1,
     player.chips = 200,
+    min.bet = 10,
+    loss.count = c(0),
     
     deck.size = 8,
     seen.cards =  setNames(rep(0, 13), c('A','2','3','4','5','6','7','8','9','10','J','Q','K')),
-    legal.moves = NULL,
     insurance.paid = 0, # 1 = insurance lost, 21 = insurance won, 0 = no insurance.
     no.actions = TRUE,
     hit.on.soft.17 = TRUE,
@@ -28,6 +29,7 @@ Blackjack <- R6Class("Blackjack",
         self$num.players <- num.players
         self$no.actions <- rep(TRUE, self$num.players)
         self$player.chips <- rep(self$player.chips, self$num.players)
+        self$loss.count <- rep(0, self$num.players)
       }
       if (!is.null(deck.size)) self$deck.size <- deck.size
       if (!is.null(hit.on.soft.17)) self$hit.on.soft.17 = hit.on.soft.17
@@ -120,6 +122,14 @@ draw.card <- function(bird) {
 
 game.reset <- function(bird) {
   
+  ## When a player has 0 or fewer chips, they are disqualified
+  if (any(bird$player.chips <= 0)) {
+    bird$num.players = bird$num.players - sum(bird$player.chips <= 0)
+    bird$loss.count = bird$loss.count[bird$player.chips > 0]
+    bird$bet.strategy = bird$bet.strategy[bird$player.chips > 0]
+    bird$player.chips = bird$player.chips[bird$player.chips > 0]
+  }
+  
   ## Reset fields
   bird$player.hand = list()
   bird$player.results = list()
@@ -176,18 +186,23 @@ dealer.turn <- function(bird) {
       if (result[i] == 21 && length(bird$player.hand[i]) == 2) {
         ## Player wins -- Blackjack pays out 1.5x bet
         bird$player.chips[[player.no]] = bird$player.chips[[player.no]] + 1.5 * result[i+1]
+        bird$loss.count[[player.no]] = 0
       } else if (result[i] > 21) {
         ## Player losses -- total > 21
         bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - result[i+1]
+        bird$loss.count[[player.no]] = bird$loss.count[[player.no]] + 1
       } else if (dealer.sum > 21) {
         ## Player win -- dealer total > 21
         bird$player.chips[[player.no]] = bird$player.chips[[player.no]] + result[i+1]
+        bird$loss.count[[player.no]] = 0
       } else if (result[i] < dealer.sum) {
         ## Player losses -- dealer > player
         bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - result[i+1]
+        bird$loss.count[[player.no]] = bird$loss.count[[player.no]] + 1
       } else if (result[i] > dealer.sum) {
         ## Player wins -- total > dealer.sum
         bird$player.chips[[player.no]] = bird$player.chips[[player.no]] + result[i+1]
+        bird$loss.count[[player.no]] = 0
       } else {
         ## Push -- dealer & player tie. No change in chips
       }
@@ -198,17 +213,17 @@ dealer.turn <- function(bird) {
 }
 
 
-main <- function(M) {
+main <- function(M=10) {
   
-  bird <- Blackjack$new(num.players = 1)
+  bird <- Blackjack$new(num.players = 3, bet.strategy = "min")
   
-  ## play 100 hands
+  ## play M hands
   for (game.no in 1:M) {
     
-    ## TODO dynamically change bet based on a strategy
-    bird$player.bet = rep(10, bird$num.players)
     ## Deal cards to every player
     game.reset(bird)
+    ## Dynamically change bet based on a strategy
+    betting.strategy(bird)
     ## Ask all players to pay insurance when applicable
     if (bird$dealer.hand[1] == 'A') {
       ## Each player chooses if they would like to buy insurance
@@ -237,6 +252,8 @@ main <- function(M) {
     }
     ## Dealer draws and pays winners
     dealer.turn(bird)
+    print(game.no)
+    print(bird$player.chips)
   }
 }
 

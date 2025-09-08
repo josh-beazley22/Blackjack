@@ -11,8 +11,8 @@ simulate.dealer <- function(bird) {
   
   ## Run simulation (actually an exact computation)
   simulate.dealer.helper(
-    bird$dealer.hand,
-    cards.left,
+    dealer.hand = bird$dealer.hand,
+    deck = cards.left,
     prob = 1,
     soft.17 = bird$hit.on.soft.17,
     insurance = bird$insurance.paid
@@ -61,7 +61,23 @@ simulate.dealer.helper <- function(dealer.hand, deck, prob, soft.17, insurance) 
 }
 
 
-insurance.policy <- function(bird) {
+insurance.policy <- function(bird, policy) {
+  ## Callable insurance policy :)
+  
+  ins.policy <- policy$get_insurance_policies()
+  decision <- rep(NULL, bird$num.players)
+  
+  if (any(ins.policy == "optimal")) {
+    optimal.decision <- optimal.insurance.policy(bird)
+    decision[ins.policy == "optimal"] <- optimal.decision[ins.policy == "optimal"]
+  }
+  decision[ins.policy == "never"] = FALSE
+  decision[ins.policy == "always"] = TRUE
+  decision
+}
+
+
+optimal.insurance.policy <- function(bird) {
   
   # DON'T CALL draw.card()-- instead generate random number & assign insurance.paid code
   
@@ -81,13 +97,13 @@ insurance.policy <- function(bird) {
   bird$insurance.paid = 0
   no.insurance = compute.EV(bird)
   
-  ## TODO: why aren't these equal?
-  ## EV(insurance == 0) =
-  ##   - bet * P(10-valued card)
-  ##   + bet * P(other card) * EV(insurance == 1)
-  hand = bird$player.hand[[1]]
-  -draw.probs[[10]] + sum(draw.probs[1:9]) * lookup.EV(yes.insurance, hand)[[2]]
-  lookup.EV(no.insurance, hand)[[2]]
+  # ## TODO: why aren't these equal?
+  # ## EV(insurance == 0) =
+  # ##   - bet * P(10-valued card)
+  # ##   + bet * P(other card) * EV(insurance == 1)
+  # hand = bird$player.hand[[1]]
+  # -draw.probs[[10]] + sum(draw.probs[1:9]) * lookup.EV(yes.insurance, hand)[[2]]
+  # lookup.EV(no.insurance, hand)[[2]]
   
   insurance.EV = numeric(bird$num.players)
   for (p in 1:bird$num.players) {
@@ -96,8 +112,7 @@ insurance.policy <- function(bird) {
     insurance.EV[p] = -0.5 * sum(draw.probs[1:9]) + 
       lookup.EV(yes.insurance, hand)[[2]] - lookup.EV(no.insurance, hand)[[2]]
   }
-  insurance.EV
-  ## TODO: Is it optimal for only 1 player buy insurance?
+  insurance.EV > 0
 }
 
 
@@ -182,13 +197,14 @@ compute.EV <- function(bird) {
   draw.probs = draw.probabilities(bird)
   
   ## Compute EV for standing at every possible total from 1 to 21
-  stand.EV = numeric(21)
+  stand.EV = numeric(31)
+  stand.EV[22:31] = -1
   for (i in 1:21) {
     win.prob = dealer.bust + sum(dealer.sim[as.numeric(names(dealer.sim)) < i])
     lose.prob = sum(dealer.sim[as.numeric(names(dealer.sim)) > i])
     stand.EV[i] = win.prob - lose.prob
   }
-  
+
   ## Compute hit EV in scenarios where Ace is always 1. Player total >= 11
   hit.EV = numeric(21)
   hit.EV[21] = -1
@@ -211,9 +227,11 @@ compute.EV <- function(bird) {
   
   ## Handling Aces. Cases where player total < 11
   ## EV is different when player is holding an Ace that can be either 11 or 1.
-  sto.ace = numeric(21)
+  sto.ace = numeric(31)
+  sto.ace[22:31] = -1
   sto.ace[11:21] = hit.EV[11:21]
   sto.no.ace = numeric(21)
+  sto.no.ace[22:31] = -1
   sto.no.ace[11:21] = hit.EV[11:21]
   
   for (i in 10:1) {
@@ -230,20 +248,21 @@ compute.EV <- function(bird) {
       stand.EV[ceil.total[1:10]],
       stand.EV[floor.total[1:10]]
     )
-    ## Compute final EV
+    ## Compute final EV for a NO ACE hand.
     sto.no.ace[i] = sum(draw.probs * pmax(
       stand.EV.no.ace,
       hit.EV.no.ace
     ))
-    
+    ## Hand with ACE. ceil.total is max total of hand
     ceil.total = (i+11) : (i+20)
     ceil.total[ceil.total > 21] = ceil.total[ceil.total > 21] - 10
+    ## Minimum total of hand.
     floor.total = (i+1) : (i+10)
     ## look up EV of hitting when current hand has ACE.
     hit.EV.ace = pmax(
       sto.ace[ceil.total[1:10]],
       sto.ace[floor.total[1:10]]
-    ) 
+    )
     ## look up EV of standing when current hand has ACE.
     stand.EV.ace = pmax(
       stand.EV[ceil.total[1:10]],
@@ -254,7 +273,7 @@ compute.EV <- function(bird) {
       hit.EV.ace
     ))
   }
-  EV.table = list(sto.ace, sto.no.ace, stand.EV)
+  EV.table = list(sto.ace[1:21], sto.no.ace[1:21], stand.EV[1:21])
   names(EV.table) = c("ace", "no.ace", "stand")
   return(EV.table)
 }
@@ -305,7 +324,7 @@ optimal.policy <- function(bird, player.no) {
   ## Return best move according to my EV calculations.
   EV = compute.EV(bird)
   table = lookup.best.action(bird, player.no, EV)
-  print(table)
+  # print(table)
   
   ## Find & return best action
   max.index <- which.max(table[[2]])
@@ -327,8 +346,6 @@ user.input.policy <- function(bird, player.no) {
 
 player.turn <- function(bird, player.no, policy) {
   
-  ## Player has taken an action, so surrendering is not allowed anymore
-  bird$no.actions[player.no] = FALSE
   ## Select action according to policy
   if (policy == "optimal") {
     action = optimal.policy(bird, player.no)
@@ -339,6 +356,8 @@ player.turn <- function(bird, player.no, policy) {
   } else {
     stop("Error: selected policy is not supported.")
   }
+  ## Player has taken an action, so surrendering is not allowed anymore
+  bird$no.actions[player.no] = FALSE
   
   ## Define local variables
   hand = bird$player.hand[[player.no]]
@@ -378,6 +397,30 @@ player.turn <- function(bird, player.no, policy) {
     bird$player.results[[player.no]] = c(ceil.sum(hand), bet)
   }
 }
+
+
+betting.strategy <- function(bird) {
+  
+  bets = c()
+  for (player.no in 1:bird$num.players) {
+    if (bird$bet.strategy[[player.no]] == "min") {
+      ## Bet the minimum number of chips each time
+      bets = c(bets, bird$min.bet)
+    } else if (bird$bet.strategy[[player.no]] == "max") {
+      ## Bet the minimum number of chips each time
+      bets = c(bets, bird$player.chips[[player.no]])
+    } 
+    else if (bird$bet.strategy[[player.no]] == "ramp") {
+      ## Double bet after each loss
+      bets = c(bets, bird$min.bet * 2^bird$loss.count[[player.no]])
+    }
+  }
+  bird$player.bet = bets
+}
+
+
+
+
 
 
 

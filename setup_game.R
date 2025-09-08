@@ -1,6 +1,6 @@
 
 
-## Setup a gamestate then find optimal the optimal player action
+## Setup a gamestate then find the optimal player action
 
 bird <- Blackjack$new(
   chips = 2000,
@@ -9,8 +9,8 @@ bird <- Blackjack$new(
   hit.on.soft.17 = TRUE
 )
 
-bird$dealer.hand = "3"
-bird$player.hand = list(c("J", "4"))
+bird$dealer.hand = "2"
+bird$player.hand = list(c("J", "2"))
 if (bird$dealer.hand[1] == 'A') {
   EV = insurance.policy(bird)
   cat("Buy Insurance:", EV > 0, "\n")
@@ -18,3 +18,7 @@ if (bird$dealer.hand[1] == 'A') {
 }
 action = optimal.policy(bird, 1) 
 cat("Best action =", action, "\n")
+
+
+## Always use insurance policy
+## Never use insurance policy
