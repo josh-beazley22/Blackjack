@@ -71,6 +71,31 @@ ceil.sum <- function(cards) {
 }
 
 
+find.legal.moves <- function(bird, player.no) {
+  
+  hand <- bird$player.hand[[player.no]]
+  if (floor.sum(hand) > 21) {
+    return(c("stand"))
+  }
+  
+  # Hit & Stand - always legal
+  legal.moves = c("hit", "stand")
+  # Split -- only possible when player.hand has two identical cards
+  if (length(hand) == 2 && hand[1] == hand[2]) {
+    legal.moves = c(legal.moves, "split")
+  }
+  # Double Down -- only possible when player.hand has two cards
+  if (length(hand) == 2) {
+    legal.moves = c(legal.moves, "double down")
+  }
+  # Surrendering -- only possible immediately when dealt
+  if (bird$no.actions[[player.no]]) {
+    legal.moves = c(legal.moves, "surrender")
+  }
+  legal.moves
+}
+
+
 dealer.must.hit <- function(dealer.hand, hit.on.soft.17) {
   ## Returns Boolean true if the dealer must hit
   sum = ceil.sum(dealer.hand)
@@ -123,12 +148,12 @@ draw.card <- function(bird) {
 game.reset <- function(bird) {
   
   ## When a player has 0 or fewer chips, they are disqualified
-  if (any(bird$player.chips <= 0)) {
-    bird$num.players = bird$num.players - sum(bird$player.chips <= 0)
-    bird$loss.count = bird$loss.count[bird$player.chips > 0]
-    bird$bet.strategy = bird$bet.strategy[bird$player.chips > 0]
-    bird$player.chips = bird$player.chips[bird$player.chips > 0]
-  }
+  # if (any(bird$player.chips <= 0)) {
+  #   bird$num.players = bird$num.players - sum(bird$player.chips <= 0)
+  #   bird$loss.count = bird$loss.count[bird$player.chips > 0]
+  #   bird$bet.strategy = bird$bet.strategy[bird$player.chips > 0]
+  #   bird$player.chips = bird$player.chips[bird$player.chips > 0]
+  # }
   
   ## Reset fields
   bird$player.hand = list()
@@ -157,6 +182,97 @@ game.reset <- function(bird) {
   for (i in 1:bird$num.players) {
     card = draw.card(bird)
     bird$player.hand[[i]] = c(bird$player.hand[[i]], card)
+  }
+}
+
+
+insurance.action <- function(bird, insurance.decision) {
+  
+  if (any(insurance.decision == TRUE)) {
+    draw.probs = draw.probabilities(bird)
+    if (names(sample(draw.probs, 1)) == '10') {
+      ## Dealer drew blackjack. Payout insurance.
+      for (player.no in 1:bird$num.players) {
+        if (insurance.decision[player.no] == FALSE) {
+          ## player did not call for insurance. player loses bet.
+          bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - bird$player.bet[[player.no]]
+        }
+      }
+      ## Hand is over
+      bird$insurance.paid = 22
+    } else {
+      ## Dealer did not draw blackjack. Continue knowing that the dealer cannot draw a 10.
+      bird$insurance.paid = 1
+    }
+  }
+}
+
+
+player.turn <- function(bird, player.no, policy) {
+  
+  if (policy == "optimal") {
+    action.table = optimal.player.policy(bird, player.no)
+    action = action.table[which.max(action.table[[2]]), 1]
+    
+  } else if (policy == "random") {
+    legal.moves = find.legal.moves(bird, player.no)
+    action = sample(legal.moves, 1)
+    
+  } else if (policy == "dealer") {
+    action = ifelse(
+      dealer.must.hit(bird$player.hand[[player.no]], bird$hit.on.soft.17),
+      "hit",
+      "stand"
+    )
+    ## always split when possible
+    hand = bird$player.hand[[player.no]]
+    if (length(hand) == 2 && hand[1] == hand[2]) {
+      action = "split"
+    }
+  } else if (policy == "wikipedia") {
+    ## look up action from Wikipedia's table
+  }
+  # TODO: script more player policies
+  
+  ## Player has taken an action, so surrendering is not allowed anymore
+  bird$no.actions[player.no] = FALSE
+  
+  ## Define local variables
+  hand = bird$player.hand[[player.no]]
+  bet = bird$player.bet[player.no]
+  
+  if (action == "split") {
+    ## Hand 1
+    bird$player.hand[[player.no]] = c(hand[1], draw.card(bird))
+    player.turn(bird, player.no, policy)
+    hand1.result = bird$player.results[[player.no]]
+    ## Hand 2
+    bird$player.hand[[player.no]] = c(hand[1], draw.card(bird))
+    player.turn(bird, player.no, policy)
+    ## Combine Results
+    bird$player.results[[player.no]] = c(bird$player.results[[player.no]], hand1.result)
+  } else if (action == "double down") {
+    ## draw card
+    bird$player.hand[[player.no]] = c(hand, draw.card(bird))
+    ## calc sum
+    sum = ceil.sum(bird$player.hand[[player.no]])
+    ## store result
+    bird$player.results[[player.no]] = c(sum, 2*bet)
+  } else if (action == "surrender") {
+    ## store loss code and bet size
+    bird$player.results[[player.no]] = c(67, 0.5 * bet)
+  } else if (action == "hit") {
+    bird$player.hand[[player.no]] = c(hand, draw.card(bird))
+    sum = ceil.sum(bird$player.hand[[player.no]])
+    if (sum > 21) {
+      ## Bust
+      bird$player.results[[player.no]] = c(sum, bet)
+    } else {
+      ## Proceed to next action
+      player.turn(bird, player.no, policy)
+    }
+  } else if (action == "stand") {
+    bird$player.results[[player.no]] = c(ceil.sum(hand), bet)
   }
 }
 
@@ -213,49 +329,6 @@ dealer.turn <- function(bird) {
 }
 
 
-main <- function(M=10) {
-  
-  bird <- Blackjack$new(num.players = 3, bet.strategy = "min")
-  
-  ## play M hands
-  for (game.no in 1:M) {
-    
-    ## Deal cards to every player
-    game.reset(bird)
-    ## Dynamically change bet based on a strategy
-    betting.strategy(bird)
-    ## Ask all players to pay insurance when applicable
-    if (bird$dealer.hand[1] == 'A') {
-      ## Each player chooses if they would like to buy insurance
-      insurance.policy(bird)
-      if (bird$insurance.paid == 1) {  ## insurance was bought by 1 or more players
-        draw.probs = draw.probabilities(bird)
-        if (names(sample(draw.probs, 1)) == '10') {
-          ## Dealer drew blackjack. Payout insurance.
-          for (player.no in 1:bird$num.players) {
-            result = bird$player.results[[player.no]]
-            if (result[1] != 77) {  ## insurance code
-              ## player did not call for insurance. player loses bet.
-              bird$player.chips[[player.no]] = bird$player.chips[[player.no]] - bird$player.bet[[player.no]]
-            }
-          }
-        }
-        ## Dealer drew blackjack. Move to next game.
-        next
-      }
-    }
-    ## Each player may abide by a different policy-- optimal, random, user input.
-    
-    for (player.no in 1:bird$num.players) {
-      ## This sim allows all players to run my optimal blackjack policy
-      player.turn(bird, player.no, "optimal")
-    }
-    ## Dealer draws and pays winners
-    dealer.turn(bird)
-    print(game.no)
-    print(bird$player.chips)
-  }
-}
 
 
 

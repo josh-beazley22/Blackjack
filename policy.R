@@ -1,9 +1,8 @@
 
-
-## Loadable policy module
-
+## Policy Module
 
 library(R6)
+
 Policy <- R6Class("Policy",
    public = list(
      
@@ -25,13 +24,6 @@ Policy <- R6Class("Policy",
    }
    ),
 )
-
-## optimal policy according to my EV calculations
-optimal.oscar <- Policy$new(bet.strat = "minimum", player.strat = "optimal", insurance.strat = "optimal")
-
-## random player policy which never buys insurance -- therefore decision  
-## lies purely with intellectual player(s)
-random.reddington <- Policy$new(bet.strat = "minimum", player.strat = "random", insurance.strat = "never")
 
 
 PolicyList <- R6Class("PolicyList",
@@ -71,19 +63,14 @@ PolicyList <- R6Class("PolicyList",
   )
 )
 
-# Example usage
-policy <- PolicyList$new()
-policy$add(optimal.oscar)
-policy$add(random.reddington)
+## optimal policy according to my EV calculations
+optimal.oscar <- Policy$new(bet.strat = "min", player.strat = "optimal", insurance.strat = "optimal")
+
+## random player policy which never buys insurance -- therefore decision  
+## lies purely with intellectual player(s)
+random.reddington <- Policy$new(bet.strat = "min", player.strat = "random", insurance.strat = "never")
+
+## player policy which acts exactly like the dealer
+stale.dale <- Policy$new(bet.strat = "min", player.strat = "dealer", insurance.strat = "never")
 
 
-
-
-sim.study <- function() {
-  
-  ## make list of player policies
-  
-  
-  ## iterate main game loop using policies
-  ## track game statistics
-}

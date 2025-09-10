@@ -5,20 +5,25 @@
 bird <- Blackjack$new(
   chips = 2000,
   deck.size = 8,
-  num.players = 1,
+  num.players = 3,
   hit.on.soft.17 = TRUE
 )
 
-bird$dealer.hand = "2"
-bird$player.hand = list(c("J", "2"))
-if (bird$dealer.hand[1] == 'A') {
-  EV = insurance.policy(bird)
-  cat("Buy Insurance:", EV > 0, "\n")
-  cat("Insurance EV =", EV, "\n")
+
+# Example usage
+policy <- PolicyList$new()
+policy$add(optimal.oscar)
+policy$add(random.reddington)
+policy$add(stale.dale)
+
+
+
+
+sim.study <- function() {
+  
+  ## make list of player policies
+  
+  
+  ## iterate main game loop using policies
+  ## track game statistics
 }
-action = optimal.policy(bird, 1) 
-cat("Best action =", action, "\n")
-
-
-## Always use insurance policy
-## Never use insurance policy
