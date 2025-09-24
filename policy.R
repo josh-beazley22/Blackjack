@@ -73,4 +73,6 @@ random.reddington <- Policy$new(bet.strat = "min", player.strat = "random", insu
 ## player policy which acts exactly like the dealer
 stale.dale <- Policy$new(bet.strat = "min", player.strat = "dealer", insurance.strat = "never")
 
+## my secret friend who helps me play. Always buys insurance & places minimum bet.
+plant <- Policy$new(bet.strat = "min", player.strat = "optimal", insurance.strat = "always")
 

@@ -72,6 +72,7 @@ ceil.sum <- function(cards) {
 
 
 find.legal.moves <- function(bird, player.no) {
+  # Helper method for random player policy
   
   hand <- bird$player.hand[[player.no]]
   if (floor.sum(hand) > 21) {

@@ -84,6 +84,7 @@ bet.policy <- function(bird, policy) {
 insurance.policy <- function(bird, policy) {
   ## Callable insurance policy 
   
+  ## Return false when dealer is not showing ace
   if (bird$dealer.hand[1] != "A") {
     return(rep(FALSE, bird$num.players))
   }
@@ -346,33 +347,6 @@ optimal.player.policy <- function(bird, player.no) {
   }
   ## Table of legal.actions & EV
   optimal.action
-}
-
-
-game.loop <- function(bird, policy) {
-  
-  ## Define game & policy
-  bird <- Blackjack$new(num.players = 2)
-  policy <- PolicyList$new()
-  policy$add(optimal.oscar)
-  policy$add(stale.dale)
-  
-  for (epoch in 1:1e3) {
-    
-    game.reset(bird)
-    bet.policy(bird, policy)
-    ins.decision = insurance.policy(bird, policy)
-    insurance.action(bird, ins.decision)
-    if (bird$insurance.paid == 22) {
-      # Dealer drew blackjack. Reset.
-      next
-    }
-    for (player.no in 1:bird$num.players) {
-      policy.name = policy$get(player.no)$player.policy
-      player.turn(bird, player.no, policy.name)
-    }
-    dealer.turn(bird)
-  }
 }
 
 
