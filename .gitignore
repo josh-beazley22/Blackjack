@@ -2,8 +2,5 @@
 .Rhistory
 .RData
 .Rproj.user/
-dealer_analysis.R
-dealer_blackjack_probs.csv
-optimal_player_policy.R
-player_analysis.R
+*.csv
 

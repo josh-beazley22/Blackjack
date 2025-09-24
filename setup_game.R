@@ -75,7 +75,7 @@ all.of.the.tests() {
       rownames(new.row) = paste0("num.players=", num.players, ", deck.size=", deck.size)
       sto = rbind(sto, new.row)
       
-      write.csv(sto, file = "test_numplayers_&_decksize.csv", row.names = FALSE)
+      write.csv(sto, file = "test_numplayers_&_decksize.txt", row.names = FALSE)
     }
   }
   
